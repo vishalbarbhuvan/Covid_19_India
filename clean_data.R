@@ -67,7 +67,15 @@ df$TotalSamples <- as.integer(df$TotalSamples)
 df$Negative <- as.integer(df$Negative)
 df$Positive <- as.integer(df$Positive)
 
-# 6. Save the cleaned dataset
+# 6. Extract Month and Sort chronologically by Date and State
+cat("\nSorting dataset by Date and State...\n")
+df$Month <- substr(df$Date, 1, 7)
+df <- df[order(df$Date, df$State), ]
+
+# Reorder columns to put Month first
+df <- df[, c("Month", "Date", "State", "TotalSamples", "Negative", "Positive")]
+
+# 7. Save the cleaned dataset
 cat("\nSaving cleaned dataset to:", output_file, "\n")
 write.csv(df, output_file, row.names = FALSE, na = "")
 
