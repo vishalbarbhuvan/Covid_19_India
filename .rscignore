@@ -1,0 +1,8 @@
+renv.lock
+renv
+.Rprofile
+.Rhistory
+.RData
+rsconnect
+Add.r
+clean_data.R
