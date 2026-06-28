@@ -1,58 +1,115 @@
 library(shiny)
 library(shinydashboard)
 library(dplyr)
-library(stringr)
-library(ggplot2)
 library(plotly)
-library(scales)
-library(tibble)
+library(ggplot2)
 library(readr)
+library(scales)
+library(stringr)
+library(jsonlite)
 
 testing_data <- read_csv("StatewiseTestingDetails.csv", show_col_types = FALSE)
 
-names(testing_data) <- names(testing_data) |>
-  str_trim()
+testing_data <- testing_data %>%
+  mutate(
+    Date = as.Date(Date),
+    State = str_trim(State),
+    TotalSamples = as.numeric(TotalSamples),
+    Negative = as.numeric(Negative),
+    Positive = as.numeric(Positive)
+  ) %>%
+  filter(!is.na(Date), !is.na(State))
 
-if ("Updated On" %in% names(testing_data)) {
-  names(testing_data)[names(testing_data) == "Updated On"] <- "Date"
+fix_state_names <- function(x) {
+  case_when(
+    x == "Orissa" ~ "Odisha",
+    x == "Pondicherry" ~ "Puducherry",
+    x == "NCT of Delhi" ~ "Delhi",
+    x == "Jammu & Kashmir" ~ "Jammu and Kashmir",
+    TRUE ~ x
+  )
 }
 
 testing_data <- testing_data %>%
-  mutate(
-    Date = as.Date(Date, format = "%d/%m/%Y")
-  )
+  mutate(State = fix_state_names(State))
 
-num_cols <- intersect(c("TotalSamples", "Positive", "Negative"), names(testing_data))
-testing_data[num_cols] <- lapply(testing_data[num_cols], function(x) suppressWarnings(as.numeric(x)))
-
-testing_data <- testing_data %>%
-  filter(!is.na(Date), !is.na(State))
+india_geojson_url <- "https://gist.githubusercontent.com/jbrobst/56c13bbbf9d97d187fea01ca62ea5112/raw/e388c4cae20aa53cb5090210a42ebb9b765c0a36/india_states.geojson"
+india_geojson <- jsonlite::read_json(india_geojson_url, simplifyVector = FALSE)
 
 ui <- dashboardPage(
   skin = "blue",
-  dashboardHeader(title = "COVID-19 India Dashboard"),
+  
+  dashboardHeader(title = span("COVID-19 India", style = "font-size: 18px;")),
   
   dashboardSidebar(
+    width = 220,
     sidebarMenu(
-      menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
+      menuItem("Dashboard", tabName = "dashboard", icon = icon("tachometer-alt")),
+      br(),
       selectInput(
         "state",
         "Select State",
         choices = c("All", sort(unique(testing_data$State))),
-        selected = "All"
+        selected = "All",
+        width = "100%"
       ),
       dateRangeInput(
         "date_range",
-        "Select Date Range",
+        "Date Range",
         start = min(testing_data$Date, na.rm = TRUE),
         end = max(testing_data$Date, na.rm = TRUE),
         min = min(testing_data$Date, na.rm = TRUE),
-        max = max(testing_data$Date, na.rm = TRUE)
+        max = max(testing_data$Date, na.rm = TRUE),
+        width = "100%"
       )
     )
   ),
   
   dashboardBody(
+    tags$head(
+      tags$style(HTML("
+        body, .content-wrapper, .right-side {
+          font-size: 13px;
+        }
+        .main-header .logo {
+          font-size: 18px !important;
+          font-weight: 600;
+        }
+        .main-sidebar {
+          font-size: 13px;
+        }
+        .sidebar-menu > li > a {
+          font-size: 14px;
+        }
+        .form-control {
+          font-size: 13px;
+          height: 34px;
+        }
+        .control-label {
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .small-box {
+          min-height: 90px !important;
+        }
+        .small-box h3 {
+          font-size: 20px !important;
+          font-weight: 700;
+          margin-bottom: 6px;
+        }
+        .small-box p {
+          font-size: 13px !important;
+        }
+        .box-title {
+          font-size: 16px !important;
+          font-weight: 600;
+        }
+        .table {
+          font-size: 12px;
+        }
+      "))
+    ),
+    
     tabItems(
       tabItem(
         tabName = "dashboard",
@@ -60,35 +117,50 @@ ui <- dashboardPage(
         fluidRow(
           valueBoxOutput("total_samples_box", width = 4),
           valueBoxOutput("positive_box", width = 4),
-          valueBoxOutput("negativity_box", width = 4)
+          valueBoxOutput("positivity_box", width = 4)
         ),
         
         fluidRow(
           box(
-            width = 12, title = "State Summary Table",
-            status = "primary", solidHeader = TRUE,
-            tableOutput("state_summary")
-          )
-        ),
-        
-        fluidRow(
-          box(
-            width = 6, title = "Testing Trend Over Time",
-            status = "warning", solidHeader = TRUE,
-            plotlyOutput("tests_plot", height = 320)
+            width = 6,
+            title = "India State Map",
+            status = "primary",
+            solidHeader = TRUE,
+            plotlyOutput("india_map", height = 430)
           ),
           box(
-            width = 6, title = "Positive Cases Over Time",
-            status = "danger", solidHeader = TRUE,
-            plotlyOutput("positive_plot", height = 320)
+            width = 6,
+            title = "Positivity Rate by State",
+            status = "success",
+            solidHeader = TRUE,
+            plotlyOutput("positivity_plot", height = 430)
           )
         ),
         
         fluidRow(
           box(
-            width = 12, title = "Positivity Rate by State",
-            status = "success", solidHeader = TRUE,
-            plotlyOutput("positivity_plot", height = 420)
+            width = 6,
+            title = "Testing Trend Over Time",
+            status = "warning",
+            solidHeader = TRUE,
+            plotlyOutput("tests_plot", height = 300)
+          ),
+          box(
+            width = 6,
+            title = "Positive Cases Over Time",
+            status = "danger",
+            solidHeader = TRUE,
+            plotlyOutput("positive_plot", height = 300)
+          )
+        ),
+        
+        fluidRow(
+          box(
+            width = 12,
+            title = "State Summary Table",
+            status = "primary",
+            solidHeader = TRUE,
+            tableOutput("state_summary")
           )
         )
       )
@@ -99,28 +171,24 @@ ui <- dashboardPage(
 server <- function(input, output, session) {
   
   filtered_data <- reactive({
-    req(input$date_range)
-    
-    data <- testing_data %>%
+    df <- testing_data %>%
       filter(Date >= input$date_range[1], Date <= input$date_range[2])
     
     if (input$state != "All") {
-      data <- data %>% filter(State == input$state)
+      df <- df %>% filter(State == input$state)
     }
     
-    data
+    df
   })
   
   state_data <- reactive({
-    req(input$date_range)
-    
     testing_data %>%
       filter(Date >= input$date_range[1], Date <= input$date_range[2]) %>%
       group_by(State) %>%
       summarise(
-        TotalSamples = suppressWarnings(max(TotalSamples, na.rm = TRUE)),
-        Positive = suppressWarnings(max(Positive, na.rm = TRUE)),
-        Negative = suppressWarnings(max(Negative, na.rm = TRUE)),
+        TotalSamples = max(TotalSamples, na.rm = TRUE),
+        Positive = max(Positive, na.rm = TRUE),
+        Negative = max(Negative, na.rm = TRUE),
         .groups = "drop"
       ) %>%
       mutate(
@@ -128,117 +196,97 @@ server <- function(input, output, session) {
         Positive = ifelse(is.infinite(Positive), NA, Positive),
         Negative = ifelse(is.infinite(Negative), NA, Negative),
         PositivityRate = ifelse(
-          !is.na(TotalSamples) & !is.na(Positive) & TotalSamples > 0,
-          (Positive / TotalSamples) * 100,
+          !is.na(TotalSamples) & TotalSamples > 0 & !is.na(Positive),
+          100 * Positive / TotalSamples,
           NA_real_
         )
       ) %>%
-      filter(!is.na(State)) %>%
-      arrange(desc(Positive))
+      filter(!is.na(State), !is.na(PositivityRate))
   })
-  
-  output$state_summary <- renderTable({
-    state_data() %>%
-      select(State, TotalSamples, Positive, Negative, PositivityRate)
-  }, striped = TRUE, hover = TRUE, spacing = "s")
   
   output$total_samples_box <- renderValueBox({
     total_samples <- filtered_data() %>%
-      summarise(v = suppressWarnings(max(TotalSamples, na.rm = TRUE))) %>%
+      summarise(v = max(TotalSamples, na.rm = TRUE)) %>%
       pull(v)
     
     if (length(total_samples) == 0 || is.infinite(total_samples) || is.na(total_samples)) {
       total_samples <- 0
     }
     
-    valueBox(
-      comma(total_samples),
-      "Total Samples",
-      icon = icon("vials"),
-      color = "aqua"
-    )
+    valueBox(comma(total_samples), "Total Samples", icon = icon("vials"), color = "aqua")
   })
   
   output$positive_box <- renderValueBox({
     total_positive <- filtered_data() %>%
-      summarise(v = suppressWarnings(max(Positive, na.rm = TRUE))) %>%
+      summarise(v = max(Positive, na.rm = TRUE)) %>%
       pull(v)
     
     if (length(total_positive) == 0 || is.infinite(total_positive) || is.na(total_positive)) {
       total_positive <- 0
     }
     
-    valueBox(
-      comma(total_positive),
-      "Total Positive",
-      icon = icon("virus"),
-      color = "red"
-    )
+    valueBox(comma(total_positive), "Total Positive", icon = icon("virus"), color = "red")
   })
   
-  output$negativity_box <- renderValueBox({
+  output$positivity_box <- renderValueBox({
     df <- filtered_data()
     
-    total_samples <- df %>%
-      summarise(v = suppressWarnings(max(TotalSamples, na.rm = TRUE))) %>%
-      pull(v)
+    total_samples <- df %>% summarise(v = max(TotalSamples, na.rm = TRUE)) %>% pull(v)
+    total_positive <- df %>% summarise(v = max(Positive, na.rm = TRUE)) %>% pull(v)
     
-    total_positive <- df %>%
-      summarise(v = suppressWarnings(max(Positive, na.rm = TRUE))) %>%
-      pull(v)
+    if (length(total_samples) == 0 || is.infinite(total_samples) || is.na(total_samples)) total_samples <- 0
+    if (length(total_positive) == 0 || is.infinite(total_positive) || is.na(total_positive)) total_positive <- 0
     
-    if (length(total_samples) == 0 || is.infinite(total_samples) || is.na(total_samples)) {
-      total_samples <- 0
-    }
+    positivity_rate <- ifelse(total_samples > 0, 100 * total_positive / total_samples, 0)
     
-    if (length(total_positive) == 0 || is.infinite(total_positive) || is.na(total_positive)) {
-      total_positive <- 0
-    }
-    
-    negativity_rate <- ifelse(total_samples > 0, ((total_samples - total_positive) / total_samples) * 100, 0)
-    
-    valueBox(
-      paste0(round(negativity_rate, 2), "%"),
-      "Negativity Rate",
-      icon = icon("chart-pie"),
-      color = "green"
-    )
+    valueBox(paste0(round(positivity_rate, 2), "%"), "Positivity Rate", icon = icon("chart-line"), color = "green")
   })
   
-  output$tests_plot <- renderPlotly({
-    plot_data <- filtered_data() %>%
-      group_by(Date) %>%
-      summarise(
-        TotalSamples = suppressWarnings(max(TotalSamples, na.rm = TRUE)),
-        .groups = "drop"
-      ) %>%
-      mutate(TotalSamples = ifelse(is.infinite(TotalSamples), NA, TotalSamples)) %>%
-      filter(!is.na(TotalSamples))
+  output$india_map <- renderPlotly({
+    map_df <- state_data() %>%
+      mutate(
+        hover_text = paste0(
+          "<b>", State, "</b><br>",
+          "Total Samples: ", comma(TotalSamples), "<br>",
+          "Positive: ", comma(Positive), "<br>",
+          "Negative: ", comma(Negative), "<br>",
+          "Positivity Rate: ", round(PositivityRate, 2), "%"
+        )
+      )
     
-    p <- ggplot(plot_data, aes(x = Date, y = TotalSamples)) +
-      geom_line(color = "#0073C2FF", linewidth = 1) +
-      labs(x = "Date", y = "Total Samples") +
-      theme_minimal()
+    req(nrow(map_df) > 0)
     
-    ggplotly(p)
+    plot_ly(
+      data = map_df,
+      type = "choropleth",
+      geojson = india_geojson,
+      locations = ~State,
+      z = ~PositivityRate,
+      featureidkey = "properties.ST_NM",
+      text = ~hover_text,
+      hoverinfo = "text",
+      source = "india_map_source",
+      colors = colorRamp(c("#fee5d9", "#fb6a4a", "#cb181d")),
+      marker = list(line = list(color = "white", width = 0.8))
+    ) %>%
+      layout(
+        geo = list(
+          fitbounds = "locations",
+          visible = FALSE
+        ),
+        margin = list(l = 0, r = 0, t = 0, b = 0),
+        font = list(size = 11)
+      )
   })
   
-  output$positive_plot <- renderPlotly({
-    plot_data <- filtered_data() %>%
-      group_by(Date) %>%
-      summarise(
-        Positive = suppressWarnings(max(Positive, na.rm = TRUE)),
-        .groups = "drop"
-      ) %>%
-      mutate(Positive = ifelse(is.infinite(Positive), NA, Positive)) %>%
-      filter(!is.na(Positive))
-    
-    p <- ggplot(plot_data, aes(x = Date, y = Positive)) +
-      geom_line(color = "#D7263D", linewidth = 1) +
-      labs(x = "Date", y = "Positive Cases") +
-      theme_minimal()
-    
-    ggplotly(p)
+  observeEvent(event_data("plotly_click", source = "india_map_source"), {
+    click_data <- event_data("plotly_click", source = "india_map_source")
+    if (!is.null(click_data) && !is.null(click_data$location)) {
+      selected_state <- click_data$location
+      if (selected_state %in% unique(testing_data$State)) {
+        updateSelectInput(session, "state", selected = selected_state)
+      }
+    }
   })
   
   output$positivity_plot <- renderPlotly({
@@ -252,10 +300,52 @@ server <- function(input, output, session) {
       geom_col(fill = "#2E8B57") +
       coord_flip() +
       labs(x = "State", y = "Positivity Rate (%)") +
-      theme_minimal()
+      theme_minimal(base_size = 11) +
+      theme(
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(size = 9),
+        axis.title = element_text(size = 11)
+      )
     
-    ggplotly(p)
+    ggplotly(p) %>% layout(font = list(size = 11))
   })
+  
+  output$tests_plot <- renderPlotly({
+    plot_data <- filtered_data() %>%
+      group_by(Date) %>%
+      summarise(TotalSamples = max(TotalSamples, na.rm = TRUE), .groups = "drop") %>%
+      mutate(TotalSamples = ifelse(is.infinite(TotalSamples), NA, TotalSamples)) %>%
+      filter(!is.na(TotalSamples))
+    
+    p <- ggplot(plot_data, aes(x = Date, y = TotalSamples)) +
+      geom_line(color = "#0073C2FF", linewidth = 0.9) +
+      labs(x = "Date", y = "Total Samples") +
+      theme_minimal(base_size = 11)
+    
+    ggplotly(p) %>% layout(font = list(size = 11))
+  })
+  
+  output$positive_plot <- renderPlotly({
+    plot_data <- filtered_data() %>%
+      group_by(Date) %>%
+      summarise(Positive = max(Positive, na.rm = TRUE), .groups = "drop") %>%
+      mutate(Positive = ifelse(is.infinite(Positive), NA, Positive)) %>%
+      filter(!is.na(Positive))
+    
+    p <- ggplot(plot_data, aes(x = Date, y = Positive)) +
+      geom_line(color = "#D7263D", linewidth = 0.9) +
+      labs(x = "Date", y = "Positive Cases") +
+      theme_minimal(base_size = 11)
+    
+    ggplotly(p) %>% layout(font = list(size = 11))
+  })
+  
+  output$state_summary <- renderTable({
+    state_data() %>%
+      arrange(desc(Positive)) %>%
+      mutate(PositivityRate = round(PositivityRate, 2)) %>%
+      select(State, TotalSamples, Positive, Negative, PositivityRate)
+  }, striped = TRUE, hover = TRUE, spacing = "s")
 }
 
 shinyApp(ui, server)
